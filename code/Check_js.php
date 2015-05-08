@@ -9,11 +9,13 @@ class Check_js{
         '--jscomp_error',   'checkRegExp',
         '--jscomp_error',   'undefinedVars'
     );
+    
     // Internal status
     private $_repo_dir;
     private $_work_dir;
     private $err_count = 0;
     private $ok_count = 0;
+    
     function __construct($repository_dir, $work_dir) {
         $this->_repo_dir = $this->clear_dir_name($repository_dir);
         $this->_work_dir = $this->clear_dir_name($work_dir);
@@ -22,7 +24,7 @@ class Check_js{
     function __destruct() {
         $end_msg = "---- END ---\n"
             ."- - - - - - -\n"
-            ."Final totals:\n"
+            ."Final summary:\n"
             ."    [CC_ERRORS] = ".$this->err_count."\n"
             ."    [right_end] = ".$this->ok_count."\n";
         echo $end_msg;
@@ -73,7 +75,8 @@ class Check_js{
         }
     }
     
-    public function filter_dir($subdir, $include, $exclude) {
+    // Filter DIR //
+    public function filter_dir($subdir, $include, $exclude = null) {
         $directory = $this->clear_dir_name($subdir);
         $directory = ($directory !=='') ? $this->_repo_dir.'/'.$directory :
                                           $this->_repo_dir;
@@ -83,24 +86,28 @@ class Check_js{
                         $filename=>$fileinfo) {
             if (!$fileinfo->isFile()) { continue; }
             $filename_c = str_replace("\\", '/', $filename);
-            // Exclude dir
-            $excluded = false;
-            foreach ($exclude as $excl) {
-                if (stripos($filename_c, $excl) !== false) {
-                    $excluded = true;
-                    break;
+            // Exclude
+            if ($exclude) {
+                $excluded = false;
+                foreach ($exclude as $excl) {
+                    if (preg_match($excl, $filename_c) !== false) {
+                        $excluded = true;
+                        break;
+                    }
                 }
+                if ($excluded)  { continue; }
             }
-            if ($excluded)  { continue; }
-            // Extension
+            
+            // Include
             $included = false;
-            foreach ($include as $ext) {
-                if (stripos($filename, '.'.$ext) !== false) {
+            foreach ($include as $inc) {
+                if (preg_match($inc, $filename_c) !== false) {
                     $included = true;
                     break;
                 }
             }
             if (!$included) { continue; }
+            
             // Push
             $p_folder = strlen($this->_repo_dir)+1;
             $p_name = strrpos($filename_c, '/')+1;
@@ -115,38 +122,64 @@ class Check_js{
     }
     
     // COMPILE JS FROM HTML //
+    public function check_js($files, $output_file = null) {
+        $this->ccompile($files, null, $output_file);
+    }
+    public function check_extract_js($file_name) {
+        $this->extract_js_and_check($file_name, 0);
+    }
+    public function check_mixed_js($file_name) {
+        $this->extract_js_and_check($file_name, 2);
+    }
+    private function extract_js_and_check($file_name, $start_type_code) {
+        $r = $this->extract_js_write($file_name, $start_type_code);
+        if ($r) { 
+            $this->ccompile(
+                "{$r['temp_folder']}/{$r['file_name']}", 
+                $this->_work_dir,
+                'temp/'.$this->get_flat_name($r['file_name']).'.min.js'
+            );
+        }
+    }
     private function get_flat_name($file_name) {
         return str_replace(
-                    array('.','/',"\\"), array('_','-','-'),
-                    $file_name
+            array('/',"\\"), array(' ',' '),
+            $file_name
         );
     }
-    public function ccompile_extract_js($file_name) {
-        $this->ccompile(
-            $this->extract_js_write($file_name), 
-            $this->_work_dir,
-            'temp/_min/'.$this->get_flat_name($file_name).'.min.js'
+    private function extract_js_write($file_name, $start_type_code) {
+        $this->_log('logs/extract_js_write', $file_name);
+        $f = $this->extract_js_code(
+            $this->_repo_dir.'/'.$file_name,
+            $start_type_code
         );
-    }
-    private function extract_js_write($file_name) {
-        $f = $this->extract_js_code($this->_repo_dir.'/'.$file_name);
         if (!$f || count($f) === 0) { return null; }
         
-        $this->_log('logs/extract_js_write', $file_name);
         $code = '';
         $line = 1;
         foreach ($f as $item) {
              "{$item['start']}-{$item['end']}.js";
-            $code .= str_repeat("\n", $item['start']-$line);
+            if ($item['start']-$line > 0) { 
+            // this should be true, but if negative jump in order to write code.
+                $code .= str_repeat("\n", $item['start']-$line);
+            }
             $line = $item['end'];
             $code .= 
                 " /* extract_js->Lines: {$item['start']}-{$item['end']} */ "
                 .$item['text']
                 ." /* extract_js->End lines: {$item['start']}-{$item['end']} */ ";
         }
-        $f_name ="temp/{$file_name}.js";
-        $this->write_file($this->_work_dir.'/'.$f_name, $code);
-        return array($f_name);
+        $file_name .='.js';
+        $temp_folder ='temp/_extract_js';
+        $f_name ="/{}";
+        $this->write_file(
+            "{$this->_work_dir}/{$temp_folder}/{$file_name}",
+            $code
+        );
+        return array(
+            'temp_folder' => $temp_folder,
+            'file_name' => $file_name            
+        );
         /*
         $folder = "temp/{$file_name}";
         $files = array();
@@ -159,7 +192,7 @@ class Check_js{
         return $files;
         */
     } 
-    private function extract_js_code($file_name) {
+    private function extract_js_code($file_name, $start_type_code) {
         if (!file_exists($file_name)) {
             $this->_log_error('NOT_EXIST', $file_name);
             return null;
@@ -169,8 +202,13 @@ class Check_js{
         $C_START = '<script';
         $C_END = '</script>';
         $line = 0;
-        $is_code = 0; // 0=no, 1=label, 2=code, 3=internal PHP
-        $code_start_line = 0;
+        $type_code = $start_type_code; // 0=no, 1=label, 2=code, 3=internal PHP
+        if ($start_type_code === 2) {
+            $code_start_line = 1;
+            $js_text = array();
+        } else {
+            $code_start_line = 0;
+        }
         $s_pos = false;
         $code_pendig = '';
         $lf_pendig = 0;
@@ -187,18 +225,18 @@ class Check_js{
                     $s_pos_PHP = 0;
                     $line++;
                 }
-                switch ($is_code) {
+                switch ($type_code) {
                 case 0:
                     $s_pos = stripos($buffer, $C_START, $s_pos);
                     if ($s_pos !== false) {
-                        $is_code = 1;
+                        $type_code = 1;
                         $s_pos_label = $s_pos + strlen($C_START);
                     }
                     break;
                 case 1:
                     $s_pos = stripos($buffer, '>', $s_pos_label);
                     if ($s_pos !== false) {
-                        $is_code = 2;
+                        $type_code = 2;
                         $s_pos_code = $s_pos + 1;
                         $code_start_line = $line;
                         $js_text = array();
@@ -212,7 +250,7 @@ class Check_js{
                         $code_pendig .= substr(
                             $buffer, $s_pos_code, $s_pos_PHP-$s_pos_code
                         ).'_PHP_REMOVED_';
-                        $is_code = 3;
+                        $type_code = 3;
                         $s_pos_PHP = $s_pos_PHP + 2;
                         $s_pos = $s_pos_PHP;
                         break;
@@ -230,10 +268,10 @@ class Check_js{
                                 $buffer, $s_pos_code, $s_pos-$s_pos_code);
                         // end code
                         $s_pos += strlen($C_END);
-                        $is_code = 0;                    
+                        $type_code = 0;                    
                     }
                     array_push($js_text, $line_text);
-                    if ($is_code !== 2) {
+                    if ($type_code !== 2) {
                         if (count($js_text) > 1 || $js_text[0] !== '') {
                             array_push($codes, array(
                                 'text' => implode("\n", $js_text),
@@ -251,7 +289,7 @@ class Check_js{
                     } else {
                         // end PHP
                         $s_pos += 2;
-                        $is_code = 2;
+                        $type_code = 2;
                         $s_pos_code = $s_pos;
                     }
                     break;
@@ -261,10 +299,19 @@ class Check_js{
                 throw new Exception(
                     "Error: fgets() is not false at the end of ::split() reading file: \"{$file_name}\".");
                 exit; 
-            } elseif ($is_code !== 0) {
+            } elseif ($type_code !== $start_type_code) {
                 throw new Exception(
-            "Error: `script` is not closed at end of file: \"{$file_name}\". Code_type={$is_code}.");
+                    "Error: `script` is not closed at end of file: \"{$file_name}\". Code_type={$type_code}.");
                 exit;
+            }
+            if ($start_type_code === 2) {
+                if (count($js_text) > 1 || $js_text[0] !== '') {
+                    array_push($codes, array(
+                        'text' => implode("\n", $js_text),
+                        'start' => $code_start_line,
+                        'end' => $line
+                    ));
+                }
             }
             fclose($handle);
             return $codes;
@@ -288,7 +335,7 @@ class Check_js{
             foreach ($files as $file) {
                 $file_final = $base_dir !== '' ? $base_dir.'/'.$file : $file;
                 $this->check_exists('set_externs()', $file_final);
-                $this->_externs .= " --externs ".realpath($file_final);
+                $this->_externs .= ' --externs "'.realpath($file_final).'"';
             }
         }
         return $this;
@@ -299,9 +346,14 @@ class Check_js{
     }
 
     // THE COMPILER //
-    public function ccompile(
+    private function ccompile(
                 $files, $base_dir = null, 
                 $output_file = null, $output_dir = null) {
+        // Check ccompiler jar is set.
+        if (!$this->_cc_jar) {
+            $this->_cancel('Check_js()', '->set_cc_jar() is not set.');
+        }
+        
         // Check `files` parameter
         if ($files) {
             if (!is_array($files)) {
@@ -322,14 +374,14 @@ class Check_js{
         $js_cmd = 'java -jar '.$this->_cc_jar;
         $js_cmd .= ' --compilation_level '.$this->_mode;
         foreach ($files as $file) {
-            $js_cmd .= " --js ".realpath($base_dir.'/'.$file);
+            $js_cmd .= ' --js "'.realpath($base_dir.'/'.$file).'"';
         }
         
         // externs
         $js_cmd .= $this->_externs;
         // output_file
         if (!$output_file) {
-            $path = pathinfo($files[0]);
+            $path = pathinfo($files[count($files)-1]);
             $output_file = $path['dirname'].'/'.$path['filename'].'.min.js';
         }
         $output_file_final = $output_dir.'/'.$output_file;
@@ -337,7 +389,7 @@ class Check_js{
         if ( !file_exists($path['dirname']) ) {
             mkdir($path['dirname'], null, true);
         }
-        $js_cmd .= ' --js_output_file '.$output_file_final;
+        $js_cmd .= ' --js_output_file "'.$output_file_final.'"';
         // options
         if (count($this->_options) > 0) {
             $js_cmd .= ' '.implode(' ', $this->_options);
@@ -370,6 +422,7 @@ class Check_js{
         }
     }
     private function _exec($cmd) {
+        echo '.'; // So see is working.
         $this->_log('logs/cmd_exec', $cmd);
         $process = proc_open(
             $cmd, 
