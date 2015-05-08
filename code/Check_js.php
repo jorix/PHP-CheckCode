@@ -20,13 +20,14 @@ class Check_js{
         $this->empty_tree($this->_work_dir);
     }
     function __destruct() {
-        $this->_log('cc_done',
-            "---- END ---\n"
+        $end_msg = "---- END ---\n"
             ."- - - - - - -\n"
             ."Final totals:\n"
             ."    [CC_ERRORS] = ".$this->err_count."\n"
-            ."    [right_end] = ".$this->ok_count."\n"
-        );
+            ."    [right_end] = ".$this->ok_count."\n";
+        echo $end_msg;
+        $this->_log('cc_errors', $end_msg);
+        $this->_log('cc_done', $end_msg);
     }
     private function clear_dir_name($directory) {
         $directory_c = str_replace("\\", '/', $directory);
@@ -168,9 +169,11 @@ class Check_js{
         $C_START = '<script';
         $C_END = '</script>';
         $line = 0;
-        $is_code = 0; // 0=no, 1=label, 2=code
+        $is_code = 0; // 0=no, 1=label, 2=code, 3=internal PHP
         $code_start_line = 0;
         $s_pos = false;
+        $code_pendig = '';
+        $lf_pendig = 0;
         if ($handle) {
             while (true) {
                 if ($s_pos === false) {
@@ -181,6 +184,7 @@ class Check_js{
                     $s_pos = 0;
                     $s_pos_label = 0;
                     $s_pos_code = 0;
+                    $s_pos_PHP = 0;
                     $line++;
                 }
                 switch ($is_code) {
@@ -201,10 +205,26 @@ class Check_js{
                     }
                     break;
                 case 2:
-                    $s_pos = stripos($buffer, $C_END, $s_pos_code);                    
+                    $s_pos = stripos($buffer, $C_END, $s_pos_code);
+                    $s_pos_PHP = stripos($buffer, '<?', $s_pos_code);
+                    if ($s_pos_PHP !== false && 
+                                ($s_pos === false || $s_pos_PHP < $s_pos) ) {
+                        $code_pendig .= substr(
+                            $buffer, $s_pos_code, $s_pos_PHP-$s_pos_code
+                        ).'_PHP_REMOVED_';
+                        $is_code = 3;
+                        $s_pos_PHP = $s_pos_PHP + 2;
+                        $s_pos = $s_pos_PHP;
+                        break;
+                    }
                     if ($s_pos === false) {
-                        // end line
-                        $line_text = substr($buffer, $s_pos_code);
+                        // end js line
+                        $line_text = $code_pendig.str_replace(
+                                array("\r","\n"), array('',''),
+                                substr($buffer, $s_pos_code)
+                            ).str_repeat("\n", $lf_pendig);
+                        $code_pendig = '';
+                        $lf_pendig = 0;
                     } else {
                         $line_text = substr(
                                 $buffer, $s_pos_code, $s_pos-$s_pos_code);
@@ -212,8 +232,7 @@ class Check_js{
                         $s_pos += strlen($C_END);
                         $is_code = 0;                    
                     }
-                    array_push($js_text, 
-                        str_replace(array("\r","\n"),array('',''), $line_text));
+                    array_push($js_text, $line_text);
                     if ($is_code !== 2) {
                         if (count($js_text) > 1 || $js_text[0] !== '') {
                             array_push($codes, array(
@@ -224,15 +243,27 @@ class Check_js{
                         }
                     }
                     break;
+                case 3:
+                    $s_pos = stripos($buffer, '?>', $s_pos_PHP);                    
+                    if ($s_pos === false) {
+                        // end line PHP into js
+                        $lf_pendig++;
+                    } else {
+                        // end PHP
+                        $s_pos += 2;
+                        $is_code = 2;
+                        $s_pos_code = $s_pos;
+                    }
+                    break;
                 }
             }
             if (!feof($handle)) {
                 throw new Exception(
                     "Error: fgets() is not false at the end of ::split() reading file: \"{$file_name}\".");
                 exit; 
-            } elseif ($is_code === 2) {
+            } elseif ($is_code !== 0) {
                 throw new Exception(
-                    "Error: `script` is not closed at end of file: \"{$file_name}\".");
+            "Error: `script` is not closed at end of file: \"{$file_name}\". Code_type={$is_code}.");
                 exit;
             }
             fclose($handle);
