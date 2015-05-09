@@ -3,6 +3,7 @@
  * TODO: 
  *   * Summary of 'NOT_EXIST' and others errors...
  *   * Doc public functions
+ *   * ccompiler: Distinguish between errors and warnings .
  */
 
 class Check_js{
@@ -282,7 +283,7 @@ class Check_js{
         $this->_cc_jar = $file_name;
         return $this;
     }
-    public function set_externs($files, $base_dir = null) {
+    public function set_externs($files = null, $base_dir = null) {
         if ($base_dir === null) {
             $base_dir = $this->_repo_dir;
         }
@@ -299,8 +300,12 @@ class Check_js{
         }
         return $this;
     }
-    public function set_options($options) {
-        $this->_options = $options;
+    public function set_options($options = null) {
+        if ($options) {
+            $this->_options = $options;
+        } else {
+            $this->_options = array();
+        }
         return $this;
     }
 
