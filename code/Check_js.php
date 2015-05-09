@@ -1,4 +1,10 @@
 <?php
+/**
+ * TODO: 
+ *   * Summary of 'NOT_EXIST' and others errors...
+ *   * Doc public functions
+ */
+
 class Check_js{
     // ccompiler defauls
     private $_externs = '';
@@ -20,6 +26,7 @@ class Check_js{
         $this->_repo_dir = $this->clear_dir_name($repository_dir);
         $this->_work_dir = $this->clear_dir_name($work_dir);
         $this->empty_tree($this->_work_dir);
+        echo "Check_js({$repository_dir}, {$work_dir})\n";
     }
     function __destruct() {
         $end_msg = "---- END ---\n"
@@ -27,7 +34,7 @@ class Check_js{
             ."Final summary:\n"
             ."    [CC_ERRORS] = ".$this->err_count."\n"
             ."    [right_end] = ".$this->ok_count."\n";
-        echo $end_msg;
+        echo "\n".$end_msg;
         $this->_log('cc_errors', $end_msg);
         $this->_log('cc_done', $end_msg);
     }
@@ -47,92 +54,54 @@ class Check_js{
             return $this->_repo_dir;
         }
     }
-    private function empty_tree($dir) {
-        if (!is_dir($dir)) {
-            // Create if not exist 
-            mkdir($dir, null, true);
-            return;
-        }
-        if ($dir === '.' || $dir === '..') {
-            throw new Exception("Error: \"{$dir}\" can't bee deleted.");
-            exit;
-        }
-        $files = array_diff(scandir($dir), array('.', '..'));
-        foreach ($files as $file) {
-            if (substr($file, 0, 1) === '.') {
-                throw new Exception(
-                    "Error on delete \"{$dir}/{$file}\": As a precaution unnamed files or dirs can't bee deleted.");
-                exit;
-            }
-            if (is_dir("{$dir}/{$file}")) {
-                $this->empty_tree("{$dir}/{$file}");
-                try {
-                    rmdir("{$dir}/{$file}");
-                } catch (Exception $e) {}
-            } else {
-                unlink("{$dir}/{$file}");
-            }
-        }
-    }
-    
-    // Filter DIR //
-    public function filter_dir($subdir, $include, $exclude = null) {
-        $directory = $this->clear_dir_name($subdir);
-        $directory = ($directory !=='') ? $this->_repo_dir.'/'.$directory :
-                                          $this->_repo_dir;
-        $files = array();
-        $iterator = new RecursiveDirectoryIterator($directory);
-        foreach (new RecursiveIteratorIterator($iterator) as
-                        $filename=>$fileinfo) {
-            if (!$fileinfo->isFile()) { continue; }
-            $filename_c = str_replace("\\", '/', $filename);
-            // Exclude
-            if ($exclude) {
-                $excluded = false;
-                foreach ($exclude as $excl) {
-                    if (preg_match($excl, $filename_c) !== false) {
-                        $excluded = true;
-                        break;
-                    }
-                }
-                if ($excluded)  { continue; }
-            }
-            
-            // Include
-            $included = false;
-            foreach ($include as $inc) {
-                if (preg_match($inc, $filename_c) !== false) {
-                    $included = true;
-                    break;
-                }
-            }
-            if (!$included) { continue; }
-            
-            // Push
-            $p_folder = strlen($this->_repo_dir)+1;
-            $p_name = strrpos($filename_c, '/')+1;
-            array_push($files, array(
-                'folder' => $this->clear_dir_name(
-                    substr($filename, $p_folder, $p_name-$p_folder)
-                ),
-                'file' => substr($filename,$p_name)
-            ));
-        }
-        return $files;
-    }
     
     // COMPILE JS FROM HTML //
-    public function check_js($files, $output_file = null) {
+    public function minimize_js($files, $output_file = null) {
         $this->ccompile($files, null, $output_file);
+        return $this;
     }
     public function check_extract_js($file_name) {
         $this->extract_js_and_check($file_name, 0);
+        return $this;
     }
     public function check_mixed_js($file_name) {
         $this->extract_js_and_check($file_name, 2);
+        return $this;
     }
+    public function check_js_dir($includes, $excludes = null) {
+        $files = $this->filter_dir($includes, $excludes);
+        foreach ($files as $f) {
+            $this->ccompile(
+                $f,
+                $this->_repo_dir,
+                'temp/'.$this->get_flat_name($f).'.min.js',
+                $this->_work_dir
+            );
+        }
+        return $this;
+    }
+    public function check_extract_js_dir($includes, $excludes = null) {
+        $files = $this->filter_dir($includes, $excludes);
+        foreach ($files as $f) {
+            $this->extract_js_and_check($f, 0);
+        }
+        return $this;
+    }
+    public function check_mixed_js_dir($includes, $excludes = null) {
+        $files = $this->filter_dir($includes, $excludes);
+        foreach ($files as $f) {
+            $this->extract_js_and_check($f, 2);
+        }
+        return $this;
+    }
+    // Extract tools
     private function extract_js_and_check($file_name, $start_type_code) {
-        $r = $this->extract_js_write($file_name, $start_type_code);
+        try {
+            $r = $this->extract_js_write($file_name, $start_type_code);
+        } catch (Exception $e) {
+            $this->_log_error('EXTRACT_FAILURE', $file_name);
+            return;
+        }
         if ($r) { 
             $this->ccompile(
                 "{$r['temp_folder']}/{$r['file_name']}", 
@@ -180,17 +149,6 @@ class Check_js{
             'temp_folder' => $temp_folder,
             'file_name' => $file_name            
         );
-        /*
-        $folder = "temp/{$file_name}";
-        $files = array();
-        foreach ($f as $item) {
-            $f_name = "{$item['start']}-{$item['end']}.js";
-            $this->write_file(
-                    $this->_work_dir.'/'.$folder.'/'.$f_name, $item['text']);
-            array_push($files, $folder.'/'.$f_name);
-        }
-        return $files;
-        */
     } 
     private function extract_js_code($file_name, $start_type_code) {
         if (!file_exists($file_name)) {
@@ -322,6 +280,7 @@ class Check_js{
     public function set_cc_jar($file_name) {
         $this->check_exists('set_cc_jar()', $file_name);
         $this->_cc_jar = $file_name;
+        return $this;
     }
     public function set_externs($files, $base_dir = null) {
         if ($base_dir === null) {
@@ -374,7 +333,12 @@ class Check_js{
         $js_cmd = 'java -jar '.$this->_cc_jar;
         $js_cmd .= ' --compilation_level '.$this->_mode;
         foreach ($files as $file) {
-            $js_cmd .= ' --js "'.realpath($base_dir.'/'.$file).'"';
+            $file_final = $base_dir.'/'.$file;
+            if (!file_exists($file_final)) {
+                $this->_log_error('NOT_EXIST', "Source \"{$file_final}\" does not exist.");
+                return;
+            }
+            $js_cmd .= ' --js "'.realpath($file_final).'"';
         }
         
         // externs
@@ -410,6 +374,13 @@ class Check_js{
         } else {
             $this->ok_count++;
             $this->_log('cc_done', 'compile OK; '.$output_file);
+        }
+        if ($result['out'] !== '') {
+            $this->write_file(
+                $this->_work_dir.'/logs/cc_out/'.
+                        $this->get_flat_name($output_file).'.log',
+                $result['out']
+            );
         }
     }
 
@@ -468,6 +439,83 @@ class Check_js{
             mkdir($path['dirname'], null, true);
         }
         file_put_contents($file_path, $content, FILE_APPEND | LOCK_EX);
+    }
+    
+    // DIR UTILITIES //
+    private function filter_dir($includes, $excludes = null) {
+        /*
+        $directory = $this->clear_dir_name($subdir);
+        $directory = ($directory !=='') ? $this->_repo_dir.'/'.$directory :
+                                          $this->_repo_dir; */
+                                          
+        if (!is_array($includes)) {
+            $includes = array($includes);
+        }
+        
+        $directory =$this->_repo_dir;
+        $files = array();
+        $p_folder = strlen($this->_repo_dir)+1;
+        $iterator = new RecursiveDirectoryIterator($directory);
+        foreach (new RecursiveIteratorIterator($iterator) as
+                        $filename=>$fileinfo) {
+            if (!$fileinfo->isFile()) { continue; }
+            $filename_c = substr(str_replace("\\", '/', $filename), $p_folder);
+            // Exclude
+            if ($excludes) {
+                if (!is_array($excludes)) {
+                    $excludes = array($excludes);
+                }
+                $excluded = false;
+                foreach ($excludes as $excl) {
+                    if (preg_match($excl, $filename_c)) {
+                        $excluded = true;
+                        break;
+                    }
+                }
+                if ($excluded)  { continue; }
+            }
+            
+            // Include
+            $included = false;
+            foreach ($includes as $inc) {
+                if (preg_match($inc, $filename_c)) {
+                    $included = true;
+                    break;
+                }
+            }
+            if (!$included) { continue; }
+            
+            // Push
+            array_push($files, substr($filename, $p_folder));
+        }
+        return $files;
+    }
+    private function empty_tree($dir) {
+        if (!is_dir($dir)) {
+            // Create if not exist 
+            mkdir($dir, null, true);
+            return;
+        }
+        if ($dir === '.' || $dir === '..') {
+            throw new Exception("Error: \"{$dir}\" can't bee deleted.");
+            exit;
+        }
+        $files = array_diff(scandir($dir), array('.', '..'));
+        foreach ($files as $file) {
+            if (substr($file, 0, 1) === '.') {
+                throw new Exception(
+                    "Error on delete \"{$dir}/{$file}\": As a precaution unnamed files or dirs can't bee deleted.");
+                exit;
+            }
+            if (is_dir("{$dir}/{$file}")) {
+                $this->empty_tree("{$dir}/{$file}");
+                try {
+                    rmdir("{$dir}/{$file}");
+                } catch (Exception $e) {}
+            } else {
+                unlink("{$dir}/{$file}");
+            }
+        }
     }
 }
 ?>
