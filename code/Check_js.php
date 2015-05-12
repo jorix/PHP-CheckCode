@@ -195,6 +195,14 @@ class Check_js{
                 case 1:
                     $s_pos = stripos($buffer, '>', $s_pos_label);
                     if ($s_pos !== false) {
+                        // check if <script src="<?=... ></script>"
+                        $s_pos_x = stripos($buffer, '?>', $s_pos_label);
+                        if ($s_pos_x !== false) {
+                            if ($s_pos_x + 1 === $s_pos) {
+                                $s_pos_label = $s_pos + 1;
+                                break;
+                            }
+                        }
                         $type_code = 2;
                         $s_pos_code = $s_pos + 1;
                         $code_start_line = $line;

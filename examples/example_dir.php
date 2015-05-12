@@ -8,7 +8,16 @@ echo "Start\n";
     
     // To check
         ->check_js_dir(
-            '#^js/.*\.js$#i', array('#\.datepicker-#i', '#\.min\.js$#i')
+            '#^js/.*\.js$#i',
+            array(
+                '#\.datepicker-#i',
+                '#\.min\.js$#i',
+                '#/jqGrid-4\.3\.1/#i',
+                '#/jquery/#i',
+                '#/jquery-fileupload/#i',
+                '#/jqueryui/#i',
+                '#/tablesorter/#i'
+            )
         )
         ->check_mixed_js_dir(
             '#^js/.*\.php$#i', array('#/jquery-fileupload/#i')
