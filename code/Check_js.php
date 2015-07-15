@@ -185,14 +185,28 @@ class Check_js{
                     $line++;
                 }
                 switch ($type_code) {
-                case 0:
+                case -1: // php
+                    $s_pos = stripos($buffer, '?>', $s_pos);
+                    if ($s_pos !== false) { // end PHP
+                        $s_pos += 2;
+                        $type_code = 0;
+                    }
+                    break;
+                case 0: // html
+                    $s_pos_AUX = stripos($buffer, '<?', $s_pos);
                     $s_pos = stripos($buffer, $C_START, $s_pos);
+                    if ($s_pos_AUX !== false && 
+                                ($s_pos === false || $s_pos_AUX < $s_pos) ) {
+                        $type_code = -1;
+                        $s_pos = $s_pos_AUX + 2;
+                        break;
+                    }
                     if ($s_pos !== false) {
                         $type_code = 1;
                         $s_pos_label = $s_pos + strlen($C_START);
                     }
                     break;
-                case 1:
+                case 1: // <script ...
                     $s_pos = stripos($buffer, '>', $s_pos_label);
                     if ($s_pos !== false) {
                         // check if <script src="<?=... ></script>"
@@ -209,7 +223,7 @@ class Check_js{
                         $js_text = array();
                     }
                     break;
-                case 2:
+                case 2: // js
                     $s_pos = stripos($buffer, $C_END, $s_pos_code);
                     $s_pos_PHP = stripos($buffer, '<?', $s_pos_code);
                     if ($s_pos_PHP !== false && 
@@ -248,7 +262,7 @@ class Check_js{
                         }
                     }
                     break;
-                case 3:
+                case 3: // php into js
                     $s_pos = stripos($buffer, '?>', $s_pos_PHP);                    
                     if ($s_pos === false) {
                         // end line PHP into js

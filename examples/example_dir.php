@@ -14,6 +14,7 @@ echo "Start\n";
                 '#\.min\.js$#i',
                 '#/jqGrid-4\.3\.1/#i',
                 '#/jquery/#i',
+                '#/jquery\.mobile-1\.0\.1/#i',
                 '#/jquery-fileupload/#i',
                 '#/jqueryui/#i',
                 '#/tablesorter/#i'
