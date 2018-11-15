@@ -1,12 +1,14 @@
 <?php 
-require_once('../code/Check_js.php');
-echo "Start\n";
+require_once('../code/CheckCode.php');
+
     // Create and set configuration
-    $s = new Check_js('../../aixada2', 'work');
-    $s->set_cc_jar('C:\_Apache\_Eines\compiler-latest/compiler.jar') // Required!
+    $s = new CheckCode('../../aixada2', 'work');
+    
+        // Set closure compiler
+    $s  ->set_cc_jar('C:\_Apache\_Eines\compiler-latest/compiler.jar') // Required!
         ->set_externs('externs_js/jQuery.js', '') // Optional
     
-    // To check
+        // Checks
         ->check_js_dir(
             '#^js/.*\.js$#i',
             array(
@@ -27,7 +29,5 @@ echo "Start\n";
             '#\.php$#i', '#/external/#i', array('#^js/#i')
         )
         ;
-    
     $s = null; // Important to show execution summary.
-echo "End\n";;
 ?>
