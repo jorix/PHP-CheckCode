@@ -23,6 +23,9 @@ class CheckCode{
     private $err_count = 0;
     private $ok_count = 0;
     
+    public static $PHP_CODE = 1;
+    public static $JS_CODE = 2;
+    
     function __construct($repository_dir, $work_dir) {
         $this->_repo_dir = $this->clear_dir_name($repository_dir);
         $this->_work_dir = $this->clear_dir_name($work_dir);
@@ -30,7 +33,9 @@ class CheckCode{
         
         echo "CheckCode({$repository_dir}, {$work_dir})\n\n";
         if (is_dir($this->_repo_dir)) {
-            $startText = "Start:\n  from: {$this->_repo_dir}/\n  to: {$this->_work_dir}/\n";
+            $startText = "Start:\n" .
+                "  from:    {$this->_repo_dir}/\n" .
+                "  working: {$this->_work_dir}/\n";
         } else {
             $startText = "ERROR: Directory '{$this->_repo_dir}/' does not exist!\n";
             $this->_repo_dir = null;
@@ -43,7 +48,7 @@ class CheckCode{
     }
     
     function __destruct() {
-        $end_msg = "---- END ----\n\n"
+        $end_msg = "\n---- END ----\n\n"
             . "Final summary:\n"
             . "    [ERRORS] = ".$this->err_count."\n"
             . "    [right_end] = ".$this->ok_count;
@@ -52,80 +57,106 @@ class CheckCode{
         $this->_log('_done', $end_msg);
     }
     
-    // COMPILE JS FROM HTML //
-    public function minimize_js($files, $output_file = null) {
-        if ($this->_repo_dir) {
-            $this->ccompile($files, null, $output_file);
+    public function php_check($options) {
+        if ($this->_repo_dir && is_array($options)) {
+            $this->mapFiles('_php_check', $options);
         }
         return $this;
     }
     
-    public function check_extract_js($fileName) {
-        if ($this->_repo_dir) {
-            $this->extract_js_and_check($fileName, 0);
+    // Verify js sintax using cc
+    public function cc_checkJs($options) {
+        if ($this->_repo_dir && is_array($options)) {
+            $this->mapFiles('_cc_checkJs', $options);
         }
         return $this;
     }
     
-    public function check_mixed_js($fileName) {
-        if ($this->_repo_dir) {
-            $this->extract_js_and_check($fileName, 2);
-        }
-        return $this;
-    }
-       
-    public function check_php($fileName) {
-        if ($this->_repo_dir) {
-            $this->phpLint($fileName);
+    // Ccompile JS from HTML //
+    public function cc_extractJs($options) {
+        if ($this->_repo_dir && is_array($options)) {
+            $this->mapFiles('_cc_extractJs', $options);
         }
         return $this;
     }
     
-    public function check_js_dir($includes, $excludes = null) {
-        if ($this->_repo_dir) {
-            $files = $this->filter_dir($includes, $excludes);
-            foreach ($files as $f) {
-                $this->ccompile(
-                    $f,
-                    $this->_repo_dir,
-                    'temp/'.$this->get_flat_name($f).'.min.js',
-                    $this->_work_dir
-                );
+    public function cc_minimizeJs($options) {
+        if ($this->_repo_dir && is_array($options)) {
+            $this->_log('_done', "\n------\nMethod: cc_minimizeJs()");
+            if (isset($options['files'])) {
+                $files = (array)$options['files'];
+                $outputFile = isset($options['output-file']) ? $options['output-file'] : null;
+                $this->ccompile($files, null, $outputFile);
             }
         }
         return $this;
     }
-    
-    public function check_extract_js_dir($includes, $excludes = null) {
-        if ($this->_repo_dir) {
-            $files = $this->filter_dir($includes, $excludes);
-            foreach ($files as $f) {
-                $this->extract_js_and_check($f, 0);
+
+    // Closure COMPILER OPTIONS //
+    public function set_cc_jar($fileName) {
+        $this->check_exists('set_cc_jar()', $fileName);
+        $this->_cc_jar = $fileName;
+        return $this;
+    }
+    public function set_cc_externs($files = null, $base_dir = null) {
+        if ($base_dir === null) {
+            $base_dir = $this->_repo_dir;
+        }
+        $this->_externs = '';
+        if ($files) {
+            if (!is_array($files)) {
+                $files = array($files);
+            }
+            foreach ($files as $file) {
+                $file_final = $base_dir !== '' ? $base_dir.'/'.$file : $file;
+                $this->check_exists('set_cc_externs()', $file_final);
+                $this->_externs .= ' --externs "'.realpath($file_final).'"';
             }
         }
         return $this;
     }
-    public function check_mixed_js_dir($includes, $excludes = null) {
-        if ($this->_repo_dir) {
-            $files = $this->filter_dir($includes, $excludes);
-            foreach ($files as $f) {
-                $this->extract_js_and_check($f, 2);
-            }
+    public function set_cc_options($options = null) {
+        if ($options) {
+            $this->_options = $options;
+        } else {
+            $this->_options = array();
         }
         return $this;
     }
     
-    public function check_php_dir($includes, $excludes = null) {
-        if ($this->_repo_dir) {
-            $files = $this->filter_dir($includes, $excludes);
+    // File Tools
+    protected function mapFiles($functionName, $options = null) 
+    {
+        // Default options
+        $options = array_merge($options, array('from-code' => self::$PHP_CODE));
+        $this->_log('_done', "\n------\nMethod: " . substr($functionName, 1) . '()');
+        if (isset($options['files'])) {
+            $files = (array)$options['files'];
             foreach ($files as $f) {
-                $this->phpLint($f);
+                $this->_log('_done', "\n  File: {$f}");
+                call_user_func_array(array($this, $functionName), array($f, $options));
             }
         }
-        return $this;
+        if (isset($options['file-pattern'])) {
+            $pattern = $options['file-pattern'];
+            $excluding = isset($options['excluded-patterns']) ? 
+                (array)$options['excluded-patterns'] :
+                '';
+            $this->_log('_done',
+                "\n  Pattern of files: '{$pattern}'" . (
+                    $excluding ? 
+                        ",\n  excluding files:\n    '" .
+                        implode("',\n    '", $excluding) . "'." :
+                        ''
+                )
+            );
+            $files = $this->filter_dir($pattern, $excluding);
+            foreach ($files as $f) {
+                call_user_func_array(array($this, $functionName), array($f, $options));
+            }
+        }
     }
-    
-    // Extract tools
+
     private function clear_dir_name($directory) {
         $directory_c = str_replace("\\", '/', $directory);
         // Clear end base dir
@@ -133,22 +164,6 @@ class CheckCode{
             $directory = substr($directory, 0, -1);
         }
         return $directory;
-    }
-
-    private function extract_js_and_check($fileName, $start_type_code) {
-        try {
-            $r = $this->extract_js_write($fileName, $start_type_code);
-        } catch (Exception $e) {
-            $this->_log_error('EXTRACT_FAILURE', $fileName);
-            return;
-        }
-        if ($r) { 
-            $this->ccompile(
-                "{$r['temp_folder']}/{$r['fileName']}", 
-                $this->_work_dir,
-                'temp/'.$this->get_flat_name($r['fileName']).'.min.js'
-            );
-        }
     }
     
     private function get_flat_name($fileName) {
@@ -158,11 +173,71 @@ class CheckCode{
         );
     }
     
-    private function extract_js_write($fileName, $start_type_code) {
-        $this->_log('logs/extract_js_write', $fileName);
-        $f = $this->extract_js_code(
+    private function check_exists($procedure_name, $file) {
+        if (!file_exists($file)) {
+            $msg = "\"{$file}\" not exist.";
+            $this->_cancel($procedure_name, "\"{$file}\" not exist.");
+            exit;
+        }
+    }
+    
+    // Lint PHP //
+    private function _php_check($file)
+    {
+        $fileName = $this->_repo_dir . '/' . $file;
+        if (!file_exists($fileName)) {
+            $this->_log_error('NOT_EXIST', $fileName);
+            return;
+        }
+        $js_cmd = 'php -l ' . $fileName;
+        $result = $this->_exec($js_cmd, $file);
+        // Write results
+        if ($result['code']) {
+            $this->_log_error('PHP_ERRORS', $file);
+            $this->write_file(
+                $this->_work_dir. '/PHP_errors/' .
+                        $this->get_flat_name($file) . '.log',
+                $result['out']
+            );
+        } else {
+            $this->ok_count++;
+            $this->_log('_done', 'PHP Lint Ok; ' . $file);
+        }
+    }
+    
+    // Extract js from HTML    
+    private function _cc_checkJs($fileName) {
+        $this->ccompile(
+            $fileName,
+            null, 
+            'logs/_check_js_min/' . $this->get_flat_name($fileName). '.min.js',
+            $this->_work_dir
+        );
+    }
+    
+    private function _cc_extractJs($fileName, $options) {
+        $startCode = $options['from-code'] ? 2 : 0;
+        try {
+            $r = $this->extract_js_write($fileName, $startCode);
+        } catch (Exception $e) {
+            $this->_log_error('EXTRACT_FAILURE', $fileName);
+            return;
+        }
+        if ($r) { 
+            $this->ccompile(
+                "{$r['temp_folder']}/{$r['fileName']}", 
+                $this->_work_dir,
+                'logs/_extract_js_min/' . $this->get_flat_name($r['fileName']).'.min.js'
+            );
+        }
+    }
+    
+    private function extract_js_write($fileName, $startCode)
+    {
+        $this->_log('logs/_extract_js', $fileName);
+        $f = $this->extractJsCode(
             $this->_repo_dir.'/'.$fileName,
-            $start_type_code
+            $startCode
         );
         if (!$f || count($f) === 0) { return null; }
         
@@ -181,7 +256,7 @@ class CheckCode{
                 ." /* extract_js->End lines: {$item['start']}-{$item['end']} */ ";
         }
         $fileName .='.js';
-        $temp_folder ='temp/_extract_js';
+        $temp_folder = 'logs/_extract_js';
         $f_name ="/{}";
         $this->write_file(
             "{$this->_work_dir}/{$temp_folder}/{$fileName}",
@@ -191,8 +266,9 @@ class CheckCode{
             'temp_folder' => $temp_folder,
             'fileName' => $fileName            
         );
-    } 
-    private function extract_js_code($fileName, $start_type_code) {
+    }
+    
+    private function extractJsCode($fileName, $startCode) {
         if (!file_exists($fileName)) {
             $this->_log_error('NOT_EXIST', $fileName);
             return null;
@@ -202,8 +278,8 @@ class CheckCode{
         $C_START = '<script';
         $C_END = '</script>';
         $line = 0;
-        $type_code = $start_type_code; // 0=no, 1=label, 2=code, 3=internal PHP
-        if ($start_type_code === 2) {
+        $type_code = $startCode; // 0=no, 1=label, 2=code, 3=internal PHP
+        if ($startCode === 2) {
             $code_start_line = 1;
             $js_text = array();
         } else {
@@ -321,12 +397,12 @@ class CheckCode{
                 throw new Exception(
                     "Error: fgets() is not false at the end of ::split() reading file: \"{$fileName}\".");
                 exit; 
-            } elseif ($type_code !== $start_type_code) {
+            } elseif ($type_code !== $startCode) {
                 throw new Exception(
                     "Error: `script` is not closed at end of file: \"{$fileName}\". Code_type={$type_code}.");
                 exit;
             }
-            if ($start_type_code === 2) {
+            if ($startCode === 2) {
                 if (count($js_text) > 1 || $js_text[0] !== '') {
                     array_push($codes, array(
                         'text' => implode("\n", $js_text),
@@ -340,66 +416,13 @@ class CheckCode{
         }
     }
     
-    // COMPILER OPTIONS //
-    public function set_cc_jar($fileName) {
-        $this->check_exists('set_cc_jar()', $fileName);
-        $this->_cc_jar = $fileName;
-        return $this;
-    }
-    public function set_externs($files = null, $base_dir = null) {
-        if ($base_dir === null) {
-            $base_dir = $this->_repo_dir;
-        }
-        $this->_externs = '';
-        if ($files) {
-            if (!is_array($files)) {
-                $files = array($files);
-            }
-            foreach ($files as $file) {
-                $file_final = $base_dir !== '' ? $base_dir.'/'.$file : $file;
-                $this->check_exists('set_externs()', $file_final);
-                $this->_externs .= ' --externs "'.realpath($file_final).'"';
-            }
-        }
-        return $this;
-    }
-    public function set_options($options = null) {
-        if ($options) {
-            $this->_options = $options;
-        } else {
-            $this->_options = array();
-        }
-        return $this;
-    }
-
-    // Lint PHP //
-    private function phpLint($file)
-    {
-        $fileName = $this->_repo_dir . '/' . $file;
-        if (!file_exists($fileName)) {
-            $this->_log_error('NOT_EXIST', $fileName);
-            return;
-        }
-        $js_cmd = 'php -l ' . $fileName;
-        $result = $this->_exec($js_cmd, $file);
-        // Write results
-        if ($result['code']) {
-            $this->_log_error('PHP_ERRORS', $file);
-            $this->write_file(
-                $this->_work_dir. '/PHP_errors/' .
-                        $this->get_flat_name($file) . '.log',
-                $result['out']
-            );
-        } else {
-            $this->ok_count++;
-            $this->_log('_done', 'PHP Lint Ok; ' . $file);
-        }
-    }
-
-    // THE COMPILER //
+    // Closure Compiler //
     private function ccompile(
-                $files, $base_dir = null, 
-                $output_file = null, $output_dir = null) {
+        $files, 
+        $base_dir = null, 
+        $output_file = null,
+        $output_dir = null
+    ) {
         // Check ccompiler jar is set.
         if (!$this->_cc_jar) {
             $this->_cancel('Check_js()', '->set_cc_jar() is not set.');
@@ -456,37 +479,29 @@ class CheckCode{
         
         // Write results
         if ($result['err'] !== '') {
-            $this->_log_error('JS_ERRORS', $output_file);
+            $this->_log_error('CC_ERRORS', $output_file);
             $this->write_file(
-                $this->_work_dir. '/JS_errors/'.
-                        $this->get_flat_name($output_file).'.log',
+                $this->_work_dir . '/logs/cc_errors/' .
+                        $this->get_flat_name($output_file) . '.log',
                 $result['err']
             );
         } else {
             $this->ok_count++;
-            $this->_log('_done', 'JS Ok; '.$output_file);
+            $this->_log('_done', 'cc-js Ok; '.$output_file);
         }
         if ($result['out'] !== '') {
             $this->write_file(
-                $this->_work_dir.'/logs/JS_out/'.
-                        $this->get_flat_name($output_file).'.log',
+                $this->_work_dir . '/logs/cc_out/' . 
+                    $this->get_flat_name($output_file) . '.log',
                 $result['out']
             );
         }
     }
 
-    // UTILITIES //
-    private function check_exists($procedure_name, $file) {
-        if (!file_exists($file)) {
-            $msg = "\"{$file}\" not exist.";
-            $this->_cancel($procedure_name, "\"{$file}\" not exist.");
-            exit;
-        }
-    }
-    
+    // Execution utilities
     private function _exec($cmd, $output_file) {
         echo '.'; // So see is working.
-        $this->_log('logs/cmd_exec', $cmd);
+        $this->_log('logs/_executions', $cmd);
         $process = proc_open(
             $cmd, 
             array(
@@ -496,10 +511,11 @@ class CheckCode{
             ),
             $pipes
         ); 
-        $result = array(
-            'out' => stream_get_contents($pipes[1]),
-            'err' => stream_get_contents($pipes[2])
-        );
+        $result = array();
+        $result['err'] = stream_get_contents($pipes[2]); // Important, first read err
+        // See: https://stackoverflow.com/questions/31194152/proc-open-hangs-when-trying-to-read-from-a-stream
+        $result['out'] = stream_get_contents($pipes[1]);
+        
         fclose($pipes[0]); 
         fclose($pipes[1]); 
         fclose($pipes[2]);
@@ -507,6 +523,7 @@ class CheckCode{
         return $result;
     }
     
+    // Log and write utilities
     private function _cancel($procedure_name, $msg) {
         $this->err_count++;
         $msg = "Error on \"->{$procedure_name}\": \n\t".$msg;
@@ -530,6 +547,7 @@ class CheckCode{
             $this->_work_dir."/{$log_name}.log", 
             $datetime->format('Y-m-d H:i:s').'->; '.$step."\n");
     }
+    
     private function write_file($file_path, $content) {
         $path = pathinfo($file_path);
         if (!file_exists($path['dirname'])) {
@@ -538,55 +556,6 @@ class CheckCode{
         file_put_contents($file_path, $content, FILE_APPEND | LOCK_EX);
     }
     
-    // DIR UTILITIES //
-    private function filter_dir($includes, $excludes = null) {
-        /*
-        $directory = $this->clear_dir_name($subdir);
-        $directory = ($directory !=='') ? $this->_repo_dir.'/'.$directory :
-                                          $this->_repo_dir; */
-                                          
-        if (!is_array($includes)) {
-            $includes = array($includes);
-        }
-        
-        $directory =$this->_repo_dir;
-        $files = array();
-        $p_folder = strlen($this->_repo_dir)+1;
-        $iterator = new RecursiveDirectoryIterator($directory);
-        foreach (new RecursiveIteratorIterator($iterator) as
-                        $filename=>$fileinfo) {
-            if (!$fileinfo->isFile()) { continue; }
-            $filename_c = substr(str_replace("\\", '/', $filename), $p_folder);
-            // Exclude
-            if ($excludes) {
-                if (!is_array($excludes)) {
-                    $excludes = array($excludes);
-                }
-                $excluded = false;
-                foreach ($excludes as $excl) {
-                    if (preg_match($excl, $filename_c)) {
-                        $excluded = true;
-                        break;
-                    }
-                }
-                if ($excluded)  { continue; }
-            }
-            
-            // Include
-            $included = false;
-            foreach ($includes as $inc) {
-                if (preg_match($inc, $filename_c)) {
-                    $included = true;
-                    break;
-                }
-            }
-            if (!$included) { continue; }
-            
-            // Push
-            array_push($files, substr($filename, $p_folder));
-        }
-        return $files;
-    }
     private function empty_tree($dir) {
         if (!is_dir($dir)) {
             // Create if not exist 
@@ -614,6 +583,53 @@ class CheckCode{
             }
         }
     }
+    
+    // Directory utilities
+    private function filter_dir($pattern, $excluding = null) {
+        /*
+        $directory = $this->clear_dir_name($subdir);
+        $directory = ($directory !=='') ? $this->_repo_dir.'/'.$directory :
+                                          $this->_repo_dir; */
+                                          
+        if (!is_array($pattern)) {
+            $pattern = array($pattern);
+        }
+        
+        $directory =$this->_repo_dir;
+        $files = array();
+        $p_folder = strlen($this->_repo_dir)+1;
+        $iterator = new RecursiveDirectoryIterator($directory);
+        foreach (new RecursiveIteratorIterator($iterator) as
+                        $filename=>$fileinfo) {
+            if (!$fileinfo->isFile()) { continue; }
+            $filename_c = substr(str_replace("\\", '/', $filename), $p_folder);
+            
+            // Exclude
+            if ($excluding) {
+                $excluded = false;
+                foreach ((array)$excluding as $excl) {
+                    if (preg_match($excl, $filename_c)) {
+                        $excluded = true;
+                        break;
+                    }
+                }
+                if ($excluded)  { continue; }
+            }
+            
+            // Include
+            $included = false;
+            foreach ($pattern as $inc) {
+                if (preg_match($inc, $filename_c)) {
+                    $included = true;
+                    break;
+                }
+            }
+            if (!$included) { continue; }
+            
+            // Push
+            array_push($files, substr($filename, $p_folder));
+        }
+        return $files;
+    }
+    
 }
-?>
-

@@ -6,12 +6,12 @@ require_once('../code/CheckCode.php');
     
         // Set closure compiler
     $s  ->set_cc_jar('C:\_Apache\_Eines\compiler-latest/compiler.jar') // Required!
-        ->set_externs('externs_js/jQuery.js', '') // Optional
+        ->set_cc_externs('externs_js/jQuery.js', '') // Optional
     
         // Checks
-        ->check_js_dir(
-            '#^js/.*\.js$#i',
-            array(
+        ->cc_checkJs(array(
+            'file-pattern' => '#^js/.*\.js$#i',
+            'excluded-patterns' => array(
                 '#\.datepicker-#i',
                 '#\.min\.js$#i',
                 '#/jqGrid-4\.3\.1/#i',
@@ -21,13 +21,15 @@ require_once('../code/CheckCode.php');
                 '#/jqueryui/#i',
                 '#/tablesorter/#i'
             )
-        )
-        ->check_mixed_js_dir(
-            '#^js/.*\.php$#i', array('#/jquery-fileupload/#i')
-        )
-        ->check_extract_js_dir(
-            '#\.php$#i', '#/external/#i', array('#^js/#i')
-        )
+        ))
+        ->cc_extractJs(array(
+            'file-pattern' => '#^js/.*\.php$#i', 
+            'excluded-patterns' => '#/jquery-fileupload/#i',
+            'from-code' => CheckCode::$JS_CODE
+        ))
+        ->cc_extractJs(array(
+            'file-pattern' => '#\.php$#i', 
+            'excluded-patterns' => '#/external/#i'
+        ))
         ;
     $s = null; // Important to show execution summary.
-?>
