@@ -1,5 +1,5 @@
-PHP-Check_js
-============
+PHP-CheckCode
+=============
 
 Allows to check js code into a PHP pages even if exist PHP in the middle of js code.
 

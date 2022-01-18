@@ -187,12 +187,14 @@ class CheckCode{
         $fileName = $this->_repo_dir . '/' . $file;
         if (!file_exists($fileName)) {
             $this->_log_error('NOT_EXIST', $fileName);
+            echo 'f';
             return;
         }
-        $js_cmd = 'php -l ' . $fileName;
-        $result = $this->_exec($js_cmd, $file);
+        $cmd = 'php -l ' . $fileName;
+        $result = $this->_exec($cmd, $file);
         // Write results
         if ($result['code']) {
+            echo 'e';
             $this->_log_error('PHP_ERRORS', $file);
             $this->write_file(
                 $this->_work_dir. '/PHP_errors/' .
@@ -221,6 +223,7 @@ class CheckCode{
             $r = $this->extract_js_write($fileName, $startCode);
         } catch (Exception $e) {
             $this->_log_error('EXTRACT_FAILURE', $fileName);
+            echo 'f';
             return;
         }
         if ($r) { 
@@ -451,6 +454,7 @@ class CheckCode{
             $file_final = $base_dir.'/'.$file;
             if (!file_exists($file_final)) {
                 $this->_log_error('NOT_EXIST', "Source \"{$file_final}\" does not exist.");
+                echo 'f';
                 return;
             }
             $js_cmd .= ' --js "' . realpath($file_final).'"';
@@ -466,7 +470,7 @@ class CheckCode{
         $output_file_final = $output_dir.'/'.$output_file;
         $path = pathinfo($output_file_final);
         if ( !file_exists($path['dirname']) ) {
-            mkdir($path['dirname'], null, true);
+            mkdir($path['dirname'], 0777, true);
         }
         $js_cmd .= ' --js_output_file "'.$output_file_final.'"';
         // options
@@ -479,6 +483,7 @@ class CheckCode{
         
         // Write results
         if ($result['err'] !== '') {
+            echo 'e';
             $this->_log_error('CC_ERRORS', $output_file);
             $this->write_file(
                 $this->_work_dir . '/logs/cc_errors/' .
@@ -551,7 +556,7 @@ class CheckCode{
     private function write_file($file_path, $content) {
         $path = pathinfo($file_path);
         if (!file_exists($path['dirname'])) {
-            mkdir($path['dirname'], null, true);
+            mkdir($path['dirname'], 0777, true);
         }
         file_put_contents($file_path, $content, FILE_APPEND | LOCK_EX);
     }
@@ -559,7 +564,7 @@ class CheckCode{
     private function empty_tree($dir) {
         if (!is_dir($dir)) {
             // Create if not exist 
-            mkdir($dir, null, true);
+            mkdir($dir, 0777, true);
             return;
         }
         if ($dir === '.' || $dir === '..') {
